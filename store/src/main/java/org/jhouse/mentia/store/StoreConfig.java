@@ -1,6 +1,7 @@
 package org.jhouse.mentia.store;
 
 public class StoreConfig {
+
     private boolean asyncWrite;
     private int indexJournalFlushWatermark, segmentIndexFoldMark;
 

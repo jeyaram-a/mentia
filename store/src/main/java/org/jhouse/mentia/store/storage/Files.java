@@ -86,6 +86,7 @@ public class Files {
                     byte[] val = entry.getValue().get();
 
                     byte[] keyInFormat = new byte[236];
+
                     keyInFormat[0] = (byte) key.length;
                     System.arraycopy(key, 0, keyInFormat, 1, key.length);
                     System.arraycopy(ByteBuffer.allocate(4).putInt(valOffset).array(), 0, keyInFormat, 204, 4);

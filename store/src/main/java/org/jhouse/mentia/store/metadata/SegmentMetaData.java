@@ -4,50 +4,38 @@ public class SegmentMetaData {
 
     public static final String NON_COMPACTED_KEY_FILE_NAME_FORMAT = "%s-non-compacted-key-%d";
     public static final String NON_COMPACTED_VAL_FILE_NAME_FORMAT = "%s-non-compacted-val-%d";
+
+    public record Header(int keyCount, byte[] min, byte[] max) {
+    }
+    final private Header header;
     final private String keyIndexFile;
     final private String valFile;
-    final private int keyCount;
-    final private byte[] min;
-    final private byte[] max;
-
-    final private long id;
+    final private int id;
 
     private boolean compacted = false;
 
-    public SegmentMetaData(String keyIndexFile, String valFile, int keyCount, byte[] min, byte[] max, long id) {
+    public SegmentMetaData(String keyIndexFile, String valFile, int id,  Header header) {
         this.keyIndexFile = keyIndexFile;
         this.valFile = valFile;
-        this.keyCount = keyCount;
+        this.header = header;
         this.id = id;
-        this.min = min;
-        this.max = max;
     }
 
     public String getKeyIndexFile() {
         return keyIndexFile;
     }
 
-    public int getKeyCount() {
-        return keyCount;
-    }
-
     public String getValFile() {
         return valFile;
-    }
-
-    public byte[] getMin() {
-        return min;
-    }
-
-    public byte[] getMax() {
-        return max;
     }
 
     public long getId() {
         return id;
     }
 
-    public boolean isCompacted() {
-        return compacted;
+    public Header getHeader() {
+        return header;
     }
+
+
 }

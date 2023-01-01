@@ -23,7 +23,7 @@ public class StorageEngine implements Closeable {
     private final StoreMetaData storeMetadata;
     private StoreConfig storeConfig;
 
-    private long journalId = 1L;
+    private int journalId = 1;
     private final JournalWriter journalWriter;
 
     private ReadWriteLock currSegmentLock = new ReentrantReadWriteLock();
@@ -43,12 +43,12 @@ public class StorageEngine implements Closeable {
         }
     }
 
-    StorageEngine(StoreConfig storeConfig, StoreMetaData storeMetadata, ExecutorService diskAccessPool) {
+    public StorageEngine(StoreConfig storeConfig, StoreMetaData storeMetadata, ExecutorService diskAccessPool) {
         this.storeConfig = storeConfig;
         this.storeMetadata = storeMetadata;
         this.journalId = storeMetadata.journalId();
         setup(this.storeConfig);
-        this.journalWriter = new JournalWriter(new JournalConfig(storeMetadata.storeRootPath(), journalId, storeConfig.isAsyncWrite(), storeConfig.getIndexJournalFlushWatermark()));
+        this.journalWriter = new JournalWriter(new JournalConfig(storeMetadata.storeRootPath(), storeMetadata.name(), journalId, storeConfig.isAsyncWrite(), storeConfig.getIndexJournalFlushWatermark()));
         this.diskAccessPool = diskAccessPool;
     }
 
@@ -59,7 +59,8 @@ public class StorageEngine implements Closeable {
     private byte[] getFromMemory(byte[] key) {
         ByteArray val = null;
         var lock = currSegmentLock.readLock();
-        val = currInMemorySegment.get(key);
+        lock.lock();
+        val = currInMemorySegment.get(new ByteArray(key));
         lock.unlock();
         if (val == null) {
             return null;
@@ -74,11 +75,12 @@ public class StorageEngine implements Closeable {
 
         if (val == null) {
             {
-                var iterator = storeMetadata.nonCompactedSegmentMetaDataList().listIterator();
+                var nonCompactedSegments = storeMetadata.nonCompactedSegmentMetaDataList();
+                var iterator = nonCompactedSegments.listIterator(nonCompactedSegments.size());
                 while (iterator.hasPrevious()) {
                     var segment = iterator.previous();
-                    if (isKeyInRange(key, segment.getMin(), segment.getMax())) {
-                        int offset = Files.search(segment.getKeyIndexFile(), key, segment.getKeyCount());
+                    if (isKeyInRange(key, segment.getHeader().min(), segment.getHeader().max())) {
+                        int offset = Files.search(segment.getKeyIndexFile(), key, segment.getHeader().keyCount());
                         if (offset >= 0) {
                             return Files.fetchVal(segment.getValFile(), offset, this.diskAccessPool);
                         }
@@ -87,11 +89,12 @@ public class StorageEngine implements Closeable {
             }
 
             {
-                var iterator = storeMetadata.compactedSegmentMetaDataList().listIterator();
+                var compactedSegments = storeMetadata.compactedSegmentMetaDataList();
+                var iterator = compactedSegments.listIterator(compactedSegments.size());
                 while (iterator.hasPrevious()) {
                     var segment = iterator.previous();
-                    if (isKeyInRange(key, segment.getMin(), segment.getMax())) {
-                        int offset = Files.search(segment.getKeyIndexFile(), key, segment.getKeyCount());
+                    if (isKeyInRange(key, segment.getHeader().min(), segment.getHeader().max())) {
+                        int offset = Files.search(segment.getKeyIndexFile(), key, segment.getHeader().keyCount());
                         if (offset >= 0) {
                             return Files.fetchVal(segment.getValFile(), offset, this.diskAccessPool);
                         }
@@ -101,11 +104,12 @@ public class StorageEngine implements Closeable {
 
         }
 
-        return null;
+        return val;
     }
 
     private void writeCurrSegmentAndReset() {
         var writeLock = currSegmentLock.writeLock();
+        writeLock.lock();
         try {
             int prevId;
             var nonCompactedSegmentMetaDataList = storeMetadata.nonCompactedSegmentMetaDataList();
@@ -118,14 +122,15 @@ public class StorageEngine implements Closeable {
             int newId = prevId + 1;
             String keyFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newId);
             String valFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newId);
-            var newSegmentFile = new SegmentMetaData(keyFileName, valFileName, this.currInMemorySegment.size(),
-                    currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get(), newId);
+            var newSegmentFile = new SegmentMetaData(keyFileName, valFileName, newId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
             long timeTaken = Instrumentation.measure(() -> {
                 Files.writeSegment(newSegmentFile, this.currInMemorySegment, this.diskAccessPool);
             });
             Logger.info(String.format("%s segment file written successfully. Took %d ms", storeMetadata.name(), timeTaken));
+            this.currInMemorySegment.clear();
+            this.currSegmentIndexSize=0;
         } catch (Exception e) {
             throw new  WriteException("Error in writing segment", e);
         } finally {
@@ -141,6 +146,7 @@ public class StorageEngine implements Closeable {
             var valArr = new ByteArray(val);
             journalWriter.write(keyArr, valArr);
             writeLock = currSegmentLock.writeLock();
+            writeLock.lock();
             currInMemorySegment.put(keyArr, valArr);
             // Don't need to use atomic integer. Anyway under currSegmentLock.
             currSegmentIndexSize += key.length + val.length;

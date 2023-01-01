@@ -1,26 +1,23 @@
 package org.jhouse.mentia.server.command;
 
-import org.jhouse.mentia.store.Store;
-
-import java.net.Socket;
 import java.util.UUID;
 
-public abstract class Command {
+public class Command {
+    private UUID id;
+    private CommandType type;
+    private String store;
 
-    private UUID uuid;
-    private String storeName;
-
-    private String commandType;
-
-    public String getStoreName() {
-        return storeName;
+    public UUID getId() {
+        return id;
     }
 
-    public String getCommandType() {
-        return commandType;
+    public CommandType getType() {
+        return type;
     }
 
-    public UUID getUuid() {
-        return uuid;
+    public String getStore() {
+        return store;
     }
+
+
 }
