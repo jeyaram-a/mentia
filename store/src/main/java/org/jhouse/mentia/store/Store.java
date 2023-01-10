@@ -31,13 +31,14 @@ public class Store {
     }
 
     static SegmentMetaData.Header getSegmentHeader(File segmentKeyFile) throws IOException {
-        var in = new FileInputStream(segmentKeyFile.getName());
-        int keyCount = ByteBuffer.wrap(in.readNBytes(4)).getInt();
-        int minLen = ByteBuffer.wrap(in.readNBytes(4)).getInt();
-        byte[] min = in.readNBytes(minLen);
-        int maxLen = ByteBuffer.wrap(in.readNBytes(4)).getInt();
-        byte[] max = in.readNBytes(maxLen);
-        return new SegmentMetaData.Header(keyCount, min, max);
+        try(var in = new FileInputStream(segmentKeyFile.getAbsoluteFile())) {
+            int keyCount = ByteBuffer.wrap(in.readNBytes(4)).getInt();
+            byte minLen = (byte)in.read();
+            byte[] min = in.readNBytes(minLen);
+            int maxLen = (byte) in.read();
+            byte[] max = in.readNBytes(maxLen);
+            return new SegmentMetaData.Header(keyCount, min, max);
+        }
     }
 
     static StoreMetaData getStoreMetaData(String storePath, String name) {
@@ -60,7 +61,6 @@ public class Store {
             for (File file : Objects.requireNonNull(dir.listFiles())) {
                 String journalPattern = "-journal-";
                 String nonCompactedKeyPattern = "-non-compacted-key-";
-                String nonCompactedValuePattern = "-non-compacted-val-";
                 String fileName = file.getName();
 
                 if (fileName.contains(journalPattern)) {
@@ -70,28 +70,32 @@ public class Store {
                     maxJournalId = Math.max(journalId, maxJournalId);
                 } else if (fileName.contains(nonCompactedKeyPattern)) {
                     int index = fileName.lastIndexOf(nonCompactedKeyPattern);
-                    int offset = journalPattern.length();
+                    int offset = nonCompactedKeyPattern.length();
                     int keyId = Integer.parseInt(file.getName().substring(index + offset, fileName.length()));
-                    var header = getSegmentHeader(file);
                     String keyFileName = file.getAbsolutePath();
+                    String keySegmentHeaderFileName = file.getAbsolutePath().replace("non-compacted-key", "non-compacted-segment-header");
+                    var header = getSegmentHeader(new File(keySegmentHeaderFileName));
                     String valFileName = file.getAbsolutePath().replace("non-compacted-key", "non-compacted-val");
                     if (!new File(valFileName).exists()) {
                         throw new RuntimeException("Value file not found " + valFileName);
                     }
-                    nonCompactedMetaData.add(new SegmentMetaData(keyFileName, valFileName, keyId, header));
-                } else {
-                    Logger.error("Encountered unsupported file " + fileName);
+                    nonCompactedMetaData.add(new SegmentMetaData(keyFileName, keySegmentHeaderFileName, valFileName, keyId, header));
                 }
             }
         } catch (Exception e) {
             throw new RuntimeException("Error in init of store with path "+storePath, e);
         }
-
+        nonCompactedMetaData.sort(Comparator.comparingInt(SegmentMetaData::getId));
         return new StoreMetaData(storePath, name, maxJournalId, new ArrayList<>(), nonCompactedMetaData);
     }
 
     public static Store open(String path, String name, StoreConfig config, ExecutorService diskAccessPool) {
         var storageEngine = new StorageEngine(config, getStoreMetaData(path, name), diskAccessPool);
+        Logger.info(String.format("Opening %s. %s", name, config));
         return new Store(name, storageEngine);
+    }
+
+    void close() {
+
     }
 }

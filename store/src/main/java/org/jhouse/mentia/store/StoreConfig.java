@@ -3,7 +3,11 @@ package org.jhouse.mentia.store;
 public class StoreConfig {
 
     private boolean asyncWrite;
+
+    private boolean cacheEnabled;
     private int indexJournalFlushWatermark, segmentIndexFoldMark;
+
+    private long cacheSize;
 
     public boolean isAsyncWrite() {
         return asyncWrite;
@@ -27,5 +31,30 @@ public class StoreConfig {
 
     public void setSegmentIndexFoldMark(int segmentIndexFoldMark) {
         this.segmentIndexFoldMark = segmentIndexFoldMark;
+    }
+
+    public boolean isCacheEnabled() {
+        return cacheEnabled;
+    }
+
+    public void setCacheEnabled(boolean cacheEnabled) {
+        this.cacheEnabled = cacheEnabled;
+    }
+
+    public long getCacheSize() {
+        return cacheSize;
+    }
+
+    public void setCacheSize(long cacheSize) {
+        this.cacheSize = cacheSize;
+    }
+
+    @Override
+    public String toString() {
+        return "StoreConfig{" +
+                "asyncWrite=" + asyncWrite +
+                ", indexJournalFlushWatermark=" + indexJournalFlushWatermark +
+                ", segmentIndexFoldMark=" + segmentIndexFoldMark +
+                '}';
     }
 }

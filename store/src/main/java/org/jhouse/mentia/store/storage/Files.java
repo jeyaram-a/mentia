@@ -22,18 +22,18 @@ public class Files {
         try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) {
             while (low <= high) {
                 int mid = (low + high) / 2;
-                file.seek(mid * 236L);
+                file.seek(mid * 208L);
                 /*
                     key max size = 200 bytes
                     Since the max size of a segment is 1gb
-                    key format -> byte+key+offset -> 4+200+32 bytes -> 236 bytes / key
+                    key format -> byte+key+offset -> 4+200+4 bytes -> 208 bytes / key
                  */
-                byte[] keyStructure = new byte[236];
+                byte[] keyStructure = new byte[208];
                 file.read(keyStructure);
                 int keyL = keyStructure[0];
                 byte[] midKey = Arrays.copyOfRange(keyStructure, 1, keyL + 1);
                 if (Arrays.equals(key, midKey)) {
-                    return ByteBuffer.wrap(Arrays.copyOfRange(keyStructure, keyL, 237)).getInt();
+                    return ByteBuffer.wrap(Arrays.copyOfRange(keyStructure, 204, 208)).getInt();
                 } else if (Arrays.compare(midKey, key) < 0) {
                     low = mid + 1;
                 } else {
@@ -52,7 +52,7 @@ public class Files {
             try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) {
                 file.seek(offset);
                 int valLen = file.readInt();
-                file.seek(offset + Long.BYTES);
+                file.seek(offset + Integer.BYTES);
                 byte[] val = new byte[valLen];
                 file.read(val);
                 return val;
@@ -62,30 +62,32 @@ public class Files {
         try {
             return valFuture.get();
         } catch (Exception e) {
-            throw new DiskAccessException("Error in fetching val from "+fileName, e);
+            throw new DiskAccessException("Error in fetching val from " + fileName, e);
         }
 
     }
 
     public static void writeSegment(SegmentMetaData segmentMetaData, TreeMap<ByteArray, ByteArray> segmentInMemory, ExecutorService pool) {
-        Future status = pool.submit(() -> {
-            BufferedOutputStream keyFileWriter = null, valFileWriter = null;
+        Future<?> status = pool.submit(() -> {
             FileLock keyIndexFLock = null, valFLock = null;
-            try {
-                var keyIndexFos = new FileOutputStream(segmentMetaData.getKeyIndexFile());
-                var valFos = new FileOutputStream(segmentMetaData.getValFile());
+            try (var keyIndexFos = new FileOutputStream(segmentMetaData.getKeyIndexFile());
+                 var segmentHeaderFos = new FileOutputStream(segmentMetaData.getSegmentHeaderFile());
+                 var valFos = new FileOutputStream(segmentMetaData.getValFile());
+                 var keyFileWriter = new BufferedOutputStream(keyIndexFos);
+                 var segmentHeaderWriter = new BufferedOutputStream(segmentHeaderFos);
+                 var valFileWriter = new BufferedOutputStream(valFos);
+            ) {
 
                 keyIndexFLock = keyIndexFos.getChannel().lock();
                 valFLock = valFos.getChannel().lock();
 
-                keyFileWriter = new BufferedOutputStream(keyIndexFos);
-                valFileWriter = new BufferedOutputStream(valFos);
+                segmentHeaderWriter.write(segmentMetaData.getHeader().toBytes());
                 int valOffset = 0;
                 for (Map.Entry<ByteArray, ByteArray> entry : segmentInMemory.entrySet()) {
                     byte[] key = entry.getKey().get();
                     byte[] val = entry.getValue().get();
 
-                    byte[] keyInFormat = new byte[236];
+                    byte[] keyInFormat = new byte[208];
 
                     keyInFormat[0] = (byte) key.length;
                     System.arraycopy(key, 0, keyInFormat, 1, key.length);
@@ -101,29 +103,10 @@ public class Files {
                 }
                 keyFileWriter.flush();
                 valFileWriter.flush();
+                keyIndexFLock.release();
+                valFLock.release();
             } catch (Exception e) {
-                throw  new WriteException("Error writing segmentInMemory to disk", e);
-            } finally {
-                try {
-                    if (keyIndexFLock != null) {
-                        keyIndexFLock.release();
-                    }
-                    if (valFLock != null) {
-                        valFLock.release();
-                    }
-
-                    if (keyFileWriter != null) {
-                        keyFileWriter.close();
-                    }
-
-                    if (valFileWriter != null) {
-                        valFileWriter.close();
-                    }
-
-                } catch (Exception e) {
-                    throw new WriteException("Error writing segmentInMemory to disk in finally block ", e);
-                }
-
+                throw new WriteException("Error writing segmentInMemory to disk", e);
             }
         });
         try {

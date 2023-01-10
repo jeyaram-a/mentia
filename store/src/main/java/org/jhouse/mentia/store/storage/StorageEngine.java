@@ -1,7 +1,6 @@
 package org.jhouse.mentia.store.storage;
 
 
-
 import org.jhouse.mentia.store.ByteArray;
 import org.jhouse.mentia.store.StoreConfig;
 import org.jhouse.mentia.store.metadata.SegmentMetaData;
@@ -29,6 +28,9 @@ public class StorageEngine implements Closeable {
     private ReadWriteLock currSegmentLock = new ReentrantReadWriteLock();
     private int currSegmentIndexSize = 0;
     private TreeMap<ByteArray, ByteArray> currInMemorySegment = new TreeMap<>();
+
+    private LRUCache cache;
+
     private ExecutorService diskAccessPool;
 
     private void setup(StoreConfig config) {
@@ -50,6 +52,9 @@ public class StorageEngine implements Closeable {
         setup(this.storeConfig);
         this.journalWriter = new JournalWriter(new JournalConfig(storeMetadata.storeRootPath(), storeMetadata.name(), journalId, storeConfig.isAsyncWrite(), storeConfig.getIndexJournalFlushWatermark()));
         this.diskAccessPool = diskAccessPool;
+        if (storeConfig.isCacheEnabled()) {
+            this.cache = new LRUCache(storeConfig.getCacheSize());
+        }
     }
 
     private boolean isKeyInRange(byte[] key, byte[] min, byte[] max) {
@@ -73,6 +78,14 @@ public class StorageEngine implements Closeable {
 
         var val = getFromMemory(key);
 
+        if (val == null && cache != null) {
+            ByteArray valFromCache = cache.get(new ByteArray(key));
+            if (valFromCache != null) {
+                return valFromCache.get();
+            }
+        }
+
+
         if (val == null) {
             {
                 var nonCompactedSegments = storeMetadata.nonCompactedSegmentMetaDataList();
@@ -82,7 +95,7 @@ public class StorageEngine implements Closeable {
                     if (isKeyInRange(key, segment.getHeader().min(), segment.getHeader().max())) {
                         int offset = Files.search(segment.getKeyIndexFile(), key, segment.getHeader().keyCount());
                         if (offset >= 0) {
-                            return Files.fetchVal(segment.getValFile(), offset, this.diskAccessPool);
+                            val = Files.fetchVal(segment.getValFile(), offset, this.diskAccessPool);
                         }
                     }
                 }
@@ -96,14 +109,16 @@ public class StorageEngine implements Closeable {
                     if (isKeyInRange(key, segment.getHeader().min(), segment.getHeader().max())) {
                         int offset = Files.search(segment.getKeyIndexFile(), key, segment.getHeader().keyCount());
                         if (offset >= 0) {
-                            return Files.fetchVal(segment.getValFile(), offset, this.diskAccessPool);
+                            val = Files.fetchVal(segment.getValFile(), offset, this.diskAccessPool);
                         }
                     }
                 }
             }
 
         }
-
+        if(cache != null) {
+            cache.put(new ByteArray(key), new ByteArray(val));
+        }
         return val;
     }
 
@@ -122,7 +137,8 @@ public class StorageEngine implements Closeable {
             int newId = prevId + 1;
             String keyFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newId);
             String valFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newId);
-            var newSegmentFile = new SegmentMetaData(keyFileName, valFileName, newId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
+            String segmentHeaderFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newId);
+            var newSegmentFile = new SegmentMetaData(keyFileName, segmentHeaderFileName, valFileName, newId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
             long timeTaken = Instrumentation.measure(() -> {
@@ -130,9 +146,9 @@ public class StorageEngine implements Closeable {
             });
             Logger.info(String.format("%s segment file written successfully. Took %d ms", storeMetadata.name(), timeTaken));
             this.currInMemorySegment.clear();
-            this.currSegmentIndexSize=0;
+            this.currSegmentIndexSize = 0;
         } catch (Exception e) {
-            throw new  WriteException("Error in writing segment", e);
+            throw new WriteException("Error in writing segment", e);
         } finally {
             writeLock.unlock();
         }
@@ -144,6 +160,9 @@ public class StorageEngine implements Closeable {
         try {
             var keyArr = new ByteArray(key);
             var valArr = new ByteArray(val);
+            if (cache != null) {
+                cache.put(keyArr, valArr);
+            }
             journalWriter.write(keyArr, valArr);
             writeLock = currSegmentLock.writeLock();
             writeLock.lock();
@@ -157,7 +176,7 @@ public class StorageEngine implements Closeable {
             Logger.error("Error in put operation ", ex);
             throw ex;
         } finally {
-            if(writeLock != null) {
+            if (writeLock != null) {
                 writeLock.unlock();
             }
         }
