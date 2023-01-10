@@ -10,12 +10,15 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 
 public class Store {
-    private String name;
-    private StorageEngine storage;
+    private final String name;
+    private final StorageEngine storage;
 
     public Store(String name, StorageEngine storage) {
         this.name = name;
@@ -95,7 +98,4 @@ public class Store {
         return new Store(name, storageEngine);
     }
 
-    void close() {
-
-    }
 }

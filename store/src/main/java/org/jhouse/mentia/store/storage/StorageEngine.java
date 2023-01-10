@@ -20,18 +20,18 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class StorageEngine implements Closeable {
 
     private final StoreMetaData storeMetadata;
-    private StoreConfig storeConfig;
+    private final StoreConfig storeConfig;
 
     private int journalId = 1;
     private final JournalWriter journalWriter;
 
-    private ReadWriteLock currSegmentLock = new ReentrantReadWriteLock();
+    private final ReadWriteLock currSegmentLock = new ReentrantReadWriteLock();
     private int currSegmentIndexSize = 0;
-    private TreeMap<ByteArray, ByteArray> currInMemorySegment = new TreeMap<>();
+    private final TreeMap<ByteArray, ByteArray> currInMemorySegment = new TreeMap<>();
 
     private LRUCache cache;
 
-    private ExecutorService diskAccessPool;
+    private final ExecutorService diskAccessPool;
 
     private void setup(StoreConfig config) {
         if (config.isAsyncWrite()) {
@@ -62,7 +62,7 @@ public class StorageEngine implements Closeable {
     }
 
     private byte[] getFromMemory(byte[] key) {
-        ByteArray val = null;
+        ByteArray val;
         var lock = currSegmentLock.readLock();
         lock.lock();
         val = currInMemorySegment.get(new ByteArray(key));
@@ -141,9 +141,7 @@ public class StorageEngine implements Closeable {
             var newSegmentFile = new SegmentMetaData(keyFileName, segmentHeaderFileName, valFileName, newId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
-            long timeTaken = Instrumentation.measure(() -> {
-                Files.writeSegment(newSegmentFile, this.currInMemorySegment, this.diskAccessPool);
-            });
+            long timeTaken = Instrumentation.measure(() -> Files.writeSegment(newSegmentFile, this.currInMemorySegment, this.diskAccessPool));
             Logger.info(String.format("%s segment file written successfully. Took %d ms", storeMetadata.name(), timeTaken));
             this.currInMemorySegment.clear();
             this.currSegmentIndexSize = 0;

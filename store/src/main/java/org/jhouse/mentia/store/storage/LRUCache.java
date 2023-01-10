@@ -11,7 +11,7 @@ public class LRUCache extends  LinkedHashMap<ByteArray, ByteArray> {
     private final long size;
     private long currSize;
 
-    private Lock lock = new ReentrantLock();
+    private final Lock lock = new ReentrantLock();
 
     LRUCache(long size) {
         super( 100, 0.75F, true);
@@ -20,10 +20,7 @@ public class LRUCache extends  LinkedHashMap<ByteArray, ByteArray> {
 
     @Override
     protected boolean removeEldestEntry(Map.Entry<ByteArray, ByteArray> eldest) {
-        if(this.currSize > size) {
-            return true;
-        }
-        return false;
+        return this.currSize > size;
     }
 
     @Override

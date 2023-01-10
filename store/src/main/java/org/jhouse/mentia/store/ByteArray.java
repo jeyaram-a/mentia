@@ -3,7 +3,7 @@ package org.jhouse.mentia.store;
 import java.util.Arrays;
 
 public class ByteArray implements Comparable<ByteArray> {
-    private byte[] arr;
+    private final byte[] arr;
 
     public ByteArray(byte[] arr) {
         this.arr = arr;

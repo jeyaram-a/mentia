@@ -13,7 +13,7 @@ public class JournalWriter implements Closeable {
     public static final String JOURNAL_PATH_FORMAT = "%s/%s-journal-%d";
     private final BufferedOutputStream stream;
 
-    private ReadWriteLock journalLock = new ReentrantReadWriteLock();
+    private final ReadWriteLock journalLock = new ReentrantReadWriteLock();
     private int inBuffer;
     private int flushWatermark;
     private boolean async;

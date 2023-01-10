@@ -69,13 +69,13 @@ public class Files {
 
     public static void writeSegment(SegmentMetaData segmentMetaData, TreeMap<ByteArray, ByteArray> segmentInMemory, ExecutorService pool) {
         Future<?> status = pool.submit(() -> {
-            FileLock keyIndexFLock = null, valFLock = null;
+            FileLock keyIndexFLock, valFLock;
             try (var keyIndexFos = new FileOutputStream(segmentMetaData.getKeyIndexFile());
                  var segmentHeaderFos = new FileOutputStream(segmentMetaData.getSegmentHeaderFile());
                  var valFos = new FileOutputStream(segmentMetaData.getValFile());
                  var keyFileWriter = new BufferedOutputStream(keyIndexFos);
                  var segmentHeaderWriter = new BufferedOutputStream(segmentHeaderFos);
-                 var valFileWriter = new BufferedOutputStream(valFos);
+                 var valFileWriter = new BufferedOutputStream(valFos)
             ) {
 
                 keyIndexFLock = keyIndexFos.getChannel().lock();

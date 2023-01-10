@@ -41,7 +41,7 @@ public class SegmentMetaData {
     final private String segmentHeaderFile;
     final private int id;
 
-    private boolean compacted = false;
+    private final boolean compacted = false;
 
     public SegmentMetaData(String keyIndexFile, String segmentHeaderFile, String valFile, int id,  Header header) {
         this.keyIndexFile = keyIndexFile;
