@@ -140,9 +140,12 @@ public class StorageEngine implements Closeable {
             String segmentHeaderFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newId);
             var newSegmentFile = new SegmentMetaData(keyFileName, segmentHeaderFileName, valFileName, newId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
+            // TODO make performance consistent. Random spikes because of this write
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
             long timeTaken = Instrumentation.measure(() -> Files.writeSegment(newSegmentFile, this.currInMemorySegment, this.diskAccessPool));
             Logger.info(String.format("%s segment file written successfully. Took %d ms", storeMetadata.name(), timeTaken));
+            this.journalId++;
+            journalWriter.createNewJournalFile(this.journalId);
             this.currInMemorySegment.clear();
             this.currSegmentIndexSize = 0;
         } catch (Exception e) {

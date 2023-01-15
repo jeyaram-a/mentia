@@ -11,15 +11,20 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class JournalWriter implements Closeable {
 
     public static final String JOURNAL_PATH_FORMAT = "%s/%s-journal-%d";
-    private final BufferedOutputStream stream;
+    private BufferedOutputStream stream;
 
     private final ReadWriteLock journalLock = new ReentrantReadWriteLock();
     private int inBuffer;
     private int flushWatermark;
     private boolean async;
 
+    private final JournalConfig config;
+
+    private String journalPath;
+
+
     public JournalWriter(JournalConfig config) {
-        String journalPath = null;
+        this.config = config;
         try {
             if (config.async()) {
                 this.async = true;
@@ -32,6 +37,20 @@ public class JournalWriter implements Closeable {
             stream = new BufferedOutputStream(new FileOutputStream(journalPath));
         } catch (FileNotFoundException ex) {
             throw new RuntimeException("Error while opening journal file" + journalPath);
+        }
+    }
+
+    public void createNewJournalFile(int id) {
+        try {
+            this.stream.close();
+            File currentJournal = new File(journalPath);
+            if(!currentJournal.delete()) {
+                throw new RuntimeException("Error in deleting journal old journal file");
+            }
+            journalPath = String.format(JOURNAL_PATH_FORMAT, config.basePath(), config.storeName(), id);
+            stream = new BufferedOutputStream(new FileOutputStream(journalPath));
+        } catch (IOException e) {
+            throw new RuntimeException("Error while creating new journal file", e);
         }
 
     }

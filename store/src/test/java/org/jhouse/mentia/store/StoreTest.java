@@ -25,14 +25,14 @@ class StoreTest {
         ExecutorService pool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
         var config = new StoreConfig();
         config.setAsyncWrite(true);
-        config.setIndexJournalFlushWatermark(ConfigDefaults.MB);
-        config.setSegmentIndexFoldMark(ConfigDefaults.MB * 2);
+        config.setIndexJournalFlushWatermark(ConfigDefaults.MB * 10);
+        config.setSegmentIndexFoldMark(ConfigDefaults.MB * 200);
         config.setCacheEnabled(true);
         config.setCacheSize(ConfigDefaults.MB * 10);
         var store = Store.open(path, "sample", config, pool);
         var start = System.currentTimeMillis();
         long tb = 0;
-        for (int i = 0; i < 20000; ++i) {
+        for (int i = 0; i < 2000000; ++i) {
             byte[] kb = ("hello-" + i).getBytes();
             byte[] vb = (("world-" + i)).repeat(100).getBytes();
             tb += kb.length + vb.length;
@@ -41,7 +41,7 @@ class StoreTest {
         var writeDuration = System.currentTimeMillis() - start;
         Logger.info(String.format("Writing took %d millis. Total %d bytes", writeDuration, tb));
         start = System.currentTimeMillis();
-        assertNotNull(store.get("hello-1".getBytes()));
+        var val = store.get("hello-134453".getBytes());
         var readDuration = System.currentTimeMillis() - start;
         Logger.info(String.format("Read took %d millis", readDuration));
     }
