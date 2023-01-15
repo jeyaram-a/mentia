@@ -53,8 +53,10 @@ public class StoreConfig {
     public String toString() {
         return "StoreConfig{" +
                 "asyncWrite=" + asyncWrite +
+                ", cacheEnabled=" + cacheEnabled +
                 ", indexJournalFlushWatermark=" + indexJournalFlushWatermark +
                 ", segmentIndexFoldMark=" + segmentIndexFoldMark +
+                ", cacheSize=" + cacheSize +
                 '}';
     }
 }

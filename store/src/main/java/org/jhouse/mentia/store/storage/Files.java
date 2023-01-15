@@ -8,10 +8,9 @@ import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
@@ -67,44 +66,40 @@ public class Files {
 
     }
 
-    public static void writeSegment(SegmentMetaData segmentMetaData, TreeMap<ByteArray, ByteArray> segmentInMemory, ExecutorService pool) {
+    public static void writeSegment(SegmentMetaData segmentMetaData, TreeMap<ByteArray, ByteArray> segmentInMemory, int valSize, ExecutorService pool) {
         Future<?> status = pool.submit(() -> {
             FileLock keyIndexFLock, valFLock;
-            try (var keyIndexFos = new FileOutputStream(segmentMetaData.getKeyIndexFile());
+            try (
                  var segmentHeaderFos = new FileOutputStream(segmentMetaData.getSegmentHeaderFile());
-                 var valFos = new FileOutputStream(segmentMetaData.getValFile());
-                 var keyFileWriter = new BufferedOutputStream(keyIndexFos);
                  var segmentHeaderWriter = new BufferedOutputStream(segmentHeaderFos);
-                 var valFileWriter = new BufferedOutputStream(valFos)
+                 var rKFile = new RandomAccessFile(segmentMetaData.getKeyIndexFile(), "rw");
+                 var rwKChannel = rKFile.getChannel();
+                 var rVFile = new RandomAccessFile(segmentMetaData.getValFile(), "rw");
+                 var rwVChannel = rVFile.getChannel()
             ) {
 
-                keyIndexFLock = keyIndexFos.getChannel().lock();
-                valFLock = valFos.getChannel().lock();
-
                 segmentHeaderWriter.write(segmentMetaData.getHeader().toBytes());
+                int keyOffset = 0;
                 int valOffset = 0;
+                byte[] keyContent = new byte[segmentInMemory.size() * 208];
+                byte[] valContent = new byte[segmentInMemory.size()*Integer.BYTES + valSize];
                 for (Map.Entry<ByteArray, ByteArray> entry : segmentInMemory.entrySet()) {
                     byte[] key = entry.getKey().get();
                     byte[] val = entry.getValue().get();
 
-                    byte[] keyInFormat = new byte[208];
+                    keyContent[keyOffset] = (byte) key.length;
+                    System.arraycopy(key, 0, keyContent, keyOffset+1, key.length);
+                    System.arraycopy(ByteBuffer.allocate(4).putInt(valOffset).array(), 0, keyContent, keyOffset+204, 4);
+                    keyOffset += 208;
 
-                    keyInFormat[0] = (byte) key.length;
-                    System.arraycopy(key, 0, keyInFormat, 1, key.length);
-                    System.arraycopy(ByteBuffer.allocate(4).putInt(valOffset).array(), 0, keyInFormat, 204, 4);
-
-                    byte[] valInFormat = new byte[Integer.BYTES + val.length];
-                    System.arraycopy(ByteBuffer.allocate(Integer.BYTES).putInt(val.length).array(), 0, valInFormat, 0, Integer.BYTES);
-                    System.arraycopy(val, 0, valInFormat, 4, val.length);
-                    valOffset += valInFormat.length;
-
-                    keyFileWriter.write(keyInFormat);
-                    valFileWriter.write(valInFormat);
+                    System.arraycopy(ByteBuffer.allocate(Integer.BYTES).putInt(val.length).array(), 0, valContent, valOffset, Integer.BYTES);
+                    System.arraycopy(val, 0, valContent, valOffset+4, val.length);
+                    valOffset += 4 + val.length;
                 }
-                keyFileWriter.flush();
-                valFileWriter.flush();
-                keyIndexFLock.release();
-                valFLock.release();
+                ByteBuffer wrKBuf = rwKChannel.map(FileChannel.MapMode.READ_WRITE, 0, keyContent.length);
+                wrKBuf.put(keyContent);
+                ByteBuffer wrVBuf = rwVChannel.map(FileChannel.MapMode.READ_WRITE, 0, valContent.length);
+                wrVBuf.put(valContent);
             } catch (Exception e) {
                 throw new WriteException("Error writing segmentInMemory to disk", e);
             }

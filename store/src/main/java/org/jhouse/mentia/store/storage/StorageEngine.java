@@ -31,6 +31,8 @@ public class StorageEngine implements Closeable {
 
     private LRUCache cache;
 
+    private int valSize;
+
     private final ExecutorService diskAccessPool;
 
     private void setup(StoreConfig config) {
@@ -142,12 +144,13 @@ public class StorageEngine implements Closeable {
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             // TODO make performance consistent. Random spikes because of this write
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
-            long timeTaken = Instrumentation.measure(() -> Files.writeSegment(newSegmentFile, this.currInMemorySegment, this.diskAccessPool));
+            long timeTaken = Instrumentation.measure(() -> Files.writeSegment(newSegmentFile, this.currInMemorySegment, valSize,this.diskAccessPool));
             Logger.info(String.format("%s segment file written successfully. Took %d ms", storeMetadata.name(), timeTaken));
             this.journalId++;
             journalWriter.createNewJournalFile(this.journalId);
             this.currInMemorySegment.clear();
             this.currSegmentIndexSize = 0;
+            this.valSize = 0;
         } catch (Exception e) {
             throw new WriteException("Error in writing segment", e);
         } finally {
@@ -159,6 +162,7 @@ public class StorageEngine implements Closeable {
     public void put(byte[] key, byte[] val) {
         Lock writeLock = null;
         try {
+            valSize += val.length;
             var keyArr = new ByteArray(key);
             var valArr = new ByteArray(val);
             if (cache != null) {

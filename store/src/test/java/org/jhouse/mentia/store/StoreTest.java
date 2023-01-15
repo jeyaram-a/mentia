@@ -28,21 +28,33 @@ class StoreTest {
         config.setIndexJournalFlushWatermark(ConfigDefaults.MB * 10);
         config.setSegmentIndexFoldMark(ConfigDefaults.MB * 200);
         config.setCacheEnabled(true);
-        config.setCacheSize(ConfigDefaults.MB * 10);
+        config.setCacheSize(ConfigDefaults.MB * 5);
         var store = Store.open(path, "sample", config, pool);
-        var start = System.currentTimeMillis();
         long tb = 0;
-        for (int i = 0; i < 2000000; ++i) {
+        int entrySize = 2000000;
+        byte[][] keys = new byte[entrySize][];
+        byte[][] vals = new byte[entrySize][];
+
+        for (int i = 0; i < entrySize; ++i) {
             byte[] kb = ("hello-" + i).getBytes();
             byte[] vb = (("world-" + i)).repeat(100).getBytes();
             tb += kb.length + vb.length;
-            store.put(kb, vb);
+            keys[i] = kb;
+            vals[i] = vb;
         }
+
+        var start = System.currentTimeMillis();
+        for(int i=0; i<entrySize; ++i) {
+            store.put(keys[i], vals[i]);
+        }
+
         var writeDuration = System.currentTimeMillis() - start;
         Logger.info(String.format("Writing took %d millis. Total %d bytes", writeDuration, tb));
         start = System.currentTimeMillis();
-        var val = store.get("hello-134453".getBytes());
+        var val = store.get("hello-1343113".getBytes());
         var readDuration = System.currentTimeMillis() - start;
+        Logger.info("val returned "+new String(val));
+
         Logger.info(String.format("Read took %d millis", readDuration));
     }
 
@@ -56,11 +68,12 @@ class StoreTest {
         config.setIndexJournalFlushWatermark(ConfigDefaults.MB);
         config.setSegmentIndexFoldMark(ConfigDefaults.MB * 2);
         config.setCacheEnabled(true);
-        config.setCacheSize(ConfigDefaults.MB * 10);
+        config.setCacheSize(ConfigDefaults.MB * 5);
         var store = Store.open(path, "sample", config, pool);
         var start = System.currentTimeMillis();
-        assertNotNull(store.get("hello-1".getBytes()));
+        var val = store.get("hello-1".getBytes());
         var readDuration = System.currentTimeMillis() - start;
+        Logger.info("Returned "+new String(val));
         Logger.info(String.format("Read took %d millis", readDuration));
     }
 
