@@ -1,7 +1,6 @@
 package org.jhouse.mentia.server.command;
 
 import org.jhouse.mentia.server.ServerConfig;
-import org.jhouse.mentia.store.Store;
 import org.jhouse.mentia.store.StoreConfig;
 
 import java.io.IOException;

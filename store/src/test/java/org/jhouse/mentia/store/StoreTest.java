@@ -1,6 +1,5 @@
 package org.jhouse.mentia.store;
 
-import org.jhouse.mentia.store.storage.ConfigDefaults;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.tinylog.Logger;
@@ -8,8 +7,6 @@ import org.tinylog.Logger;
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class StoreTest {
 
@@ -25,10 +22,10 @@ class StoreTest {
         ExecutorService pool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
         var config = new StoreConfig();
         config.setAsyncWrite(true);
-        config.setIndexJournalFlushWatermark(ConfigDefaults.MB * 10);
-        config.setSegmentIndexFoldMark(ConfigDefaults.MB * 200);
+        config.setIndexJournalFlushWatermark(UtilConstants.MB * 10);
+        config.setSegmentIndexFoldMark(UtilConstants.MB * 200);
         config.setCacheEnabled(true);
-        config.setCacheSize(ConfigDefaults.MB * 5);
+        config.setCacheSize(UtilConstants.MB * 5);
         var store = Store.open(path, "sample", config, pool);
         long tb = 0;
         int entrySize = 2000000;
@@ -65,10 +62,10 @@ class StoreTest {
         ExecutorService pool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
         var config = new StoreConfig();
         config.setAsyncWrite(true);
-        config.setIndexJournalFlushWatermark(ConfigDefaults.MB);
-        config.setSegmentIndexFoldMark(ConfigDefaults.MB * 2);
+        config.setIndexJournalFlushWatermark(UtilConstants.MB);
+        config.setSegmentIndexFoldMark(UtilConstants.MB * 2);
         config.setCacheEnabled(true);
-        config.setCacheSize(ConfigDefaults.MB * 5);
+        config.setCacheSize(UtilConstants.MB * 5);
         var store = Store.open(path, "sample", config, pool);
         var start = System.currentTimeMillis();
         var val = store.get("hello-1".getBytes());

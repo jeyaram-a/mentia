@@ -10,13 +10,13 @@ Usage
     // false -> slower writes but safe data         
     config.setAsyncWrite(true);
     // if async for every watermark data in memory is persisted
-    config.setIndexJournalFlushWatermark(ConfigDefaults.MB * 10);
+    config.setIndexJournalFlushWatermark(UtilConstants.MB * 10);
     // how big each segment files are
-    config.setSegmentIndexFoldMark(ConfigDefaults.MB * 200);
+    config.setSegmentIndexFoldMark(UtilConstants.MB * 200);
     // faster reads at the cost of more memory
     config.setCacheEnabled(true);
     // if enables how big is the cache
-    config.setCacheSize(ConfigDefaults.MB * 5);
+    config.setCacheSize(UtilConstants.MB * 5);
     
     // Thread pool for disk access
     ExecutorService diskAccessPool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
