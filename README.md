@@ -9,18 +9,18 @@ Usage
     // true -> faster writes but can lose data if server goes down
     // false -> slower writes but safe data         
     config.setAsyncWrite(true);
-    // if async for every watermark data in memory is persisted
+    // if async, for every watermark amount of data, in memory is persisted
     config.setIndexJournalFlushWatermark(UtilConstants.MB * 10);
     // how big each segment files are
     config.setSegmentIndexFoldMark(UtilConstants.MB * 200);
     // faster reads at the cost of more memory
     config.setCacheEnabled(true);
-    // if enables how big is the cache
+    // if cache enabled how big is the cache
     config.setCacheSize(UtilConstants.MB * 5);
     
     // Thread pool for disk access
     ExecutorService diskAccessPool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
-    var path = "";
+    var path = "path_to_store";
     // sample is the store name
     // creates store if not present
     // if present restores state        
