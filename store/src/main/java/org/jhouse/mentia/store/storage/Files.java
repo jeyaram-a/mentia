@@ -9,7 +9,6 @@ import java.io.FileOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -70,7 +69,6 @@ public class Files {
 
     public static void writeSegment(SegmentMetaData segmentMetaData, TreeMap<ByteArray, ByteArray> segmentInMemory, int valSize, ExecutorService pool) {
         Future<?> status = pool.submit(() -> {
-            FileLock keyIndexFLock, valFLock;
             try (
                  var segmentHeaderFos = new FileOutputStream(segmentMetaData.getSegmentHeaderFile());
                  var segmentHeaderWriter = new BufferedOutputStream(segmentHeaderFos);
