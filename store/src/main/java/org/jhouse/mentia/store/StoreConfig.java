@@ -9,6 +9,8 @@ public class StoreConfig {
 
     private long cacheSize;
 
+    private int maxPendingCompactionCount;
+
     public boolean isAsyncWrite() {
         return asyncWrite;
     }
@@ -47,6 +49,14 @@ public class StoreConfig {
 
     public void setCacheSize(long cacheSize) {
         this.cacheSize = cacheSize;
+    }
+
+    public int getMaxPendingCompactionCount() {
+        return maxPendingCompactionCount;
+    }
+
+    public void setMaxPendingCompactionCount(int maxPendingCompactionCount) {
+        this.maxPendingCompactionCount = maxPendingCompactionCount;
     }
 
     @Override
