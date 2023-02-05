@@ -51,7 +51,7 @@ INFO: Read took 1 millis
 ```
 
 ### TODO
-- [ ] Background compaction
+- [x] Background compaction
 - [ ] Compression
 - [ ] Encryption
 - [ ] Server setup
