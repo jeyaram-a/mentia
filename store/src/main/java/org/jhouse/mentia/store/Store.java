@@ -30,12 +30,22 @@ public class Store {
         this.storage = storage;
     }
 
-    byte[] get(byte[] key) {
+    public byte[] get(byte[] key) {
         return storage.get(key);
     }
 
-    void put(byte[] key, byte[] val) {
+    public void put(byte[] key, byte[] val) {
         storage.put(key, val);
+    }
+
+    public void shutDown()  {
+        try {
+            this.storage.shutdown();
+//            this.storage.getStoreMetadata().lock().release();
+        } catch (Exception e) {
+            throw new RuntimeException("Error in shutting down ", e);
+        }
+
     }
 
     static SegmentMetaData.Header getSegmentHeader(File segmentKeyFile) throws IOException {
@@ -71,11 +81,13 @@ public class Store {
         int maxJournalId = 1;
 
         List<SegmentMetaData> nonCompactedMetaData = new ArrayList<>();
+        List<SegmentMetaData> compactedMetaData = new ArrayList<>();
         try {
 
             for (File file : Objects.requireNonNull(dir.listFiles())) {
                 String journalPattern = "-journal-";
                 String nonCompactedKeyPattern = "-non-compacted-key-";
+                String compactedKeyPattern = "-compacted-key-";
                 String fileName = file.getName();
 
                 if (fileName.contains(journalPattern)) {
@@ -95,14 +107,26 @@ public class Store {
                         throw new RuntimeException("Value file not found " + valFileName);
                     }
                     nonCompactedMetaData.add(new SegmentMetaData(keyFileName, keySegmentHeaderFileName, valFileName, keyId, header));
+                } else if (fileName.contains(compactedKeyPattern)) {
+                    int index = fileName.lastIndexOf(compactedKeyPattern);
+                    int offset = compactedKeyPattern.length();
+                    int keyId = Integer.parseInt(file.getName().substring(index + offset, fileName.length()));
+                    String keyFileName = file.getAbsolutePath();
+                    String keySegmentHeaderFileName = file.getAbsolutePath().replace("compacted-key", "compacted-segment-header");
+                    var header = getSegmentHeader(new File(keySegmentHeaderFileName));
+                    String valFileName = file.getAbsolutePath().replace("compacted-key", "compacted-val");
+                    if (!new File(valFileName).exists()) {
+                        throw new RuntimeException("Value file not found " + valFileName);
+                    }
+                    compactedMetaData.add(new SegmentMetaData(keyFileName, keySegmentHeaderFileName, valFileName, keyId, header));
                 }
             }
         } catch (Exception e) {
             throw new RuntimeException("Error in init of store with path " + storePath, e);
         }
         nonCompactedMetaData.sort(Comparator.comparingInt(SegmentMetaData::getId));
-        // TODO change compacted
-        return new StoreMetaData(lock, storePath, name, maxJournalId, new ArrayList<>(), nonCompactedMetaData,
+        compactedMetaData.sort(Comparator.comparingInt(SegmentMetaData::getId));
+        return new StoreMetaData(lock, storePath, name, maxJournalId, compactedMetaData, nonCompactedMetaData,
                 new ReentrantReadWriteLock(), new ReentrantReadWriteLock());
     }
 

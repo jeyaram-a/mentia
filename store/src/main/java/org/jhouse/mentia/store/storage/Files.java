@@ -3,6 +3,7 @@ package org.jhouse.mentia.store.storage;
 
 import org.jhouse.mentia.store.ByteArray;
 import org.jhouse.mentia.store.metadata.SegmentMetaData;
+import org.tinylog.Logger;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -35,7 +36,7 @@ public class Files {
                 if (Arrays.equals(key, midKey)) {
                     return ByteBuffer.wrap(Arrays.copyOfRange(keyStructure, 204, 208)).getInt();
                 } else if (Arrays.compare(midKey, key) < 0) {
-                    low = mid + 1;
+                    low = mid+1;
                 } else {
                     high = mid - 1;
                 }
@@ -77,7 +78,7 @@ public class Files {
                  var rVFile = new RandomAccessFile(segmentMetaData.getValFile(), "rw");
                  var rwVChannel = rVFile.getChannel()
             ) {
-
+                Logger.info("Writing to "+ segmentMetaData.getKeyIndexFile());
                 segmentHeaderWriter.write(segmentMetaData.getHeader().toBytes());
                 int keyOffset = 0;
                 int valOffset = 0;
