@@ -10,11 +10,16 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Store {
     private final String name;
@@ -34,9 +39,9 @@ public class Store {
     }
 
     static SegmentMetaData.Header getSegmentHeader(File segmentKeyFile) throws IOException {
-        try(var in = new FileInputStream(segmentKeyFile.getAbsoluteFile())) {
+        try (var in = new FileInputStream(segmentKeyFile.getAbsoluteFile())) {
             int keyCount = ByteBuffer.wrap(in.readNBytes(4)).getInt();
-            byte minLen = (byte)in.read();
+            byte minLen = (byte) in.read();
             byte[] min = in.readNBytes(minLen);
             int maxLen = (byte) in.read();
             byte[] max = in.readNBytes(maxLen);
@@ -46,10 +51,17 @@ public class Store {
 
     static StoreMetaData getStoreMetaData(String storePath, String name) {
         var dir = new File(storePath);
+        FileLock lock = null;
         if (!dir.exists()) {
             boolean creationStatus = dir.mkdirs();
-            if(!creationStatus) {
-                throw new RuntimeException("Cannot initialize store "+ storePath);
+            if (!creationStatus) {
+                throw new RuntimeException("Cannot initialize store " + storePath);
+            }
+            String lockFilePath = dir.getAbsolutePath() + "/lock";
+            try (FileChannel channel = FileChannel.open(Path.of(lockFilePath), new StandardOpenOption[]{StandardOpenOption.APPEND})) {
+                lock = channel.tryLock();
+            } catch (IOException e) {
+                throw new RuntimeException("Cannot acquire lock on store. May be it is open in some other process", e);
             }
         }
         if (!dir.isDirectory()) {
@@ -86,10 +98,12 @@ public class Store {
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("Error in init of store with path "+storePath, e);
+            throw new RuntimeException("Error in init of store with path " + storePath, e);
         }
         nonCompactedMetaData.sort(Comparator.comparingInt(SegmentMetaData::getId));
-        return new StoreMetaData(storePath, name, maxJournalId, new ArrayList<>(), nonCompactedMetaData);
+        // TODO change compacted
+        return new StoreMetaData(lock, storePath, name, maxJournalId, new ArrayList<>(), nonCompactedMetaData,
+                new ReentrantReadWriteLock(), new ReentrantReadWriteLock());
     }
 
     public static Store open(String path, String name, StoreConfig config, ExecutorService diskAccessPool) {

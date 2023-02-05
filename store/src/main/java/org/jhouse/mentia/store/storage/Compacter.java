@@ -1,6 +1,7 @@
 package org.jhouse.mentia.store.storage;
 
 import org.jhouse.mentia.store.metadata.SegmentMetaData;
+import org.jhouse.mentia.store.metadata.StoreMetaData;
 import org.tinylog.Logger;
 
 import java.io.*;
@@ -36,10 +37,16 @@ public class Compacter {
         return valFile.readNBytes(intLen);
     }
 
-    void compact(List<SegmentMetaData> nonCompactedSegmentMetaDataList, ReadWriteLock nonCompactedSegmentsListLock,
-                 List<SegmentMetaData> compactedSegmentMetaDataList, ReadWriteLock compactedSegmentsListLock,
+    void compact(StoreMetaData storeMetaData,
                  String keyFileName, String valFileName, String segmentHeaderFileName, int id) {
+
         TreeMap<byte[], Entry> keyEntryMap = new TreeMap<>(Arrays::compare);
+
+        List<SegmentMetaData> nonCompactedSegmentMetaDataList = storeMetaData.nonCompactedSegmentMetaDataList();
+        ReadWriteLock nonCompactedSegmentsListLock = storeMetaData.nonCompactedSegmentMetaDataListLock();
+        List<SegmentMetaData> compactedSegmentMetaDataList = storeMetaData.compactedSegmentMetaDataList();
+        ReadWriteLock compactedSegmentsListLock = storeMetaData.compactedSegmentMetaDataListLock();
+
         byte[] minKey = null, maxKey = null;
         try (var compactedKey = new BufferedOutputStream(new FileOutputStream(keyFileName));
              var compactedVal = new BufferedOutputStream(new FileOutputStream(valFileName));

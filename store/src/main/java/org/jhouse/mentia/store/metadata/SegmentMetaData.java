@@ -9,6 +9,10 @@ public class SegmentMetaData {
     public static final String NON_COMPACTED_VAL_FILE_NAME_FORMAT = "%s-non-compacted-val-%d";
     public static final String NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT = "%s-non-compacted-segment-header-%d";
 
+    public static final String COMPACTED_KEY_FILE_NAME_FORMAT = "%s-compacted-key-%d";
+    public static final String COMPACTED_VAL_FILE_NAME_FORMAT = "%s-compacted-val-%d";
+    public static final String COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT = "%s-compacted-segment-header-%d";
+
     public record Header(int keyCount, byte[] min, byte[] max) {
         public byte[] toBytes() {
             int offset = 0;

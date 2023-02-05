@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -33,7 +34,13 @@ public class StorageEngine implements Closeable {
 
     private int valSize;
 
+    private final int maxPendingCompactionCount;
+
+    private AtomicBoolean compactionInProgress = new AtomicBoolean(false);
+
     private final ExecutorService diskAccessPool;
+
+    private final  Compacter compacter = new Compacter();
 
     private void setup(StoreConfig config) {
         if (config.isAsyncWrite()) {
@@ -56,6 +63,11 @@ public class StorageEngine implements Closeable {
         this.diskAccessPool = diskAccessPool;
         if (storeConfig.isCacheEnabled()) {
             this.cache = new LRUCache(storeConfig.getCacheSize());
+        }
+        if(storeConfig.getMaxPendingCompactionCount() <= 0) {
+            this.maxPendingCompactionCount = 5;
+        } else {
+            this.maxPendingCompactionCount = storeConfig.getMaxPendingCompactionCount();
         }
     }
 
@@ -90,6 +102,8 @@ public class StorageEngine implements Closeable {
 
         if (val == null) {
             {
+                var rLock = storeMetadata.nonCompactedSegmentMetaDataListLock().readLock();
+                rLock.lock();
                 var nonCompactedSegments = storeMetadata.nonCompactedSegmentMetaDataList();
                 var iterator = nonCompactedSegments.listIterator(nonCompactedSegments.size());
                 while (iterator.hasPrevious()) {
@@ -101,9 +115,12 @@ public class StorageEngine implements Closeable {
                         }
                     }
                 }
+                rLock.unlock();
             }
 
             {
+                var rLock = storeMetadata.nonCompactedSegmentMetaDataListLock().readLock();
+                rLock.lock();
                 var compactedSegments = storeMetadata.compactedSegmentMetaDataList();
                 var iterator = compactedSegments.listIterator(compactedSegments.size());
                 while (iterator.hasPrevious()) {
@@ -115,6 +132,7 @@ public class StorageEngine implements Closeable {
                         }
                     }
                 }
+                rLock.unlock();
             }
 
         }
@@ -124,23 +142,33 @@ public class StorageEngine implements Closeable {
         return val;
     }
 
+    // This method has to be scynchronised
     private void writeCurrSegmentAndReset() {
-        var writeLock = currSegmentLock.writeLock();
-        writeLock.lock();
+        var currSegmentWriteLock = currSegmentLock.writeLock();
+        currSegmentWriteLock.lock();
         try {
-            int prevId;
-            var nonCompactedSegmentMetaDataList = storeMetadata.nonCompactedSegmentMetaDataList();
-            if (nonCompactedSegmentMetaDataList.isEmpty()) {
-                prevId = 0;
+            int prevNonCompactedId, nonCompactedSegmentMetaDataListSize, prevCompactedId, compactedSegmentMetaDataListSize;
+            nonCompactedSegmentMetaDataListSize = storeMetadata.nonCompactedSegmentMetaDataList().size();
+            if (nonCompactedSegmentMetaDataListSize == 0) {
+                prevNonCompactedId = 0;
             } else {
-                int lastIndex = storeMetadata.nonCompactedSegmentMetaDataList().size() - 1;
-                prevId = lastIndex + 1;
+                int lastIndex = nonCompactedSegmentMetaDataListSize - 1;
+                prevNonCompactedId = lastIndex + 1;
             }
-            int newId = prevId + 1;
-            String keyFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newId);
-            String valFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newId);
-            String segmentHeaderFileName = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newId);
-            var newSegmentFile = new SegmentMetaData(keyFileName, segmentHeaderFileName, valFileName, newId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
+            int newNonCompactedId = prevNonCompactedId + 1;
+
+            compactedSegmentMetaDataListSize = storeMetadata.nonCompactedSegmentMetaDataList().size();
+            if (compactedSegmentMetaDataListSize == 0) {
+                prevCompactedId = 0;
+            } else {
+                int lastIndex = compactedSegmentMetaDataListSize - 1;
+                prevCompactedId = lastIndex + 1;
+            }
+            int newCompactedId = prevCompactedId + 1;
+            String keyFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newNonCompactedId);
+            String valFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newNonCompactedId);
+            String segmentHeaderFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newNonCompactedId);
+            var newSegmentFile = new SegmentMetaData(keyFileNameNonCompacted, segmentHeaderFileNameNonCompacted, valFileNameNonCompacted, newNonCompactedId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             // TODO make performance consistent. Random spikes because of this write
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
@@ -151,10 +179,23 @@ public class StorageEngine implements Closeable {
             this.currInMemorySegment.clear();
             this.currSegmentIndexSize = 0;
             this.valSize = 0;
+
+
+            if(nonCompactedSegmentMetaDataListSize + 1 > maxPendingCompactionCount && !this.compactionInProgress.get()) {
+                this.diskAccessPool.submit(() -> {
+                    this.compactionInProgress.getAndSet(true);
+                    String keyFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newCompactedId);
+                    String valFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newCompactedId);
+                    String segmentHeaderFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newCompactedId);
+                    compacter.compact(this.storeMetadata, keyFileNameCompacted, valFileNameCompacted, segmentHeaderFileNameCompacted, newCompactedId);
+                    this.compactionInProgress.getAndSet(false);
+                });
+            }
+
         } catch (Exception e) {
             throw new WriteException("Error in writing segment", e);
         } finally {
-            writeLock.unlock();
+            currSegmentWriteLock.unlock();
         }
 
     }
@@ -172,7 +213,7 @@ public class StorageEngine implements Closeable {
             writeLock = currSegmentLock.writeLock();
             writeLock.lock();
             currInMemorySegment.put(keyArr, valArr);
-            // Don't need to use atomic integer. Anyway under currSegmentLock.
+            // Don't need to use atomic integer. Anyway under  .
             currSegmentIndexSize += key.length + val.length;
             if (currSegmentIndexSize >= storeConfig.getSegmentIndexFoldMark()) {
                 writeCurrSegmentAndReset();
