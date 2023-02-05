@@ -11,8 +11,11 @@ import org.tinylog.Logger;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Queue;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -42,6 +45,11 @@ public class StorageEngine implements Closeable {
 
     private final  Compacter compacter = new Compacter();
 
+    private int currNonCompactedId = -1;
+    private int currCompactedId = -1;
+
+    Queue<Future<?>> backgroundTasks = new LinkedBlockingQueue<>();
+
     private void setup(StoreConfig config) {
         if (config.isAsyncWrite()) {
             if (config.getIndexJournalFlushWatermark() == 0) {
@@ -58,9 +66,9 @@ public class StorageEngine implements Closeable {
         this.storeConfig = storeConfig;
         this.storeMetadata = storeMetadata;
         this.journalId = storeMetadata.journalId();
+        this.diskAccessPool = diskAccessPool;
         setup(this.storeConfig);
         this.journalWriter = new JournalWriter(new JournalConfig(storeMetadata.storeRootPath(), storeMetadata.name(), journalId, storeConfig.isAsyncWrite(), storeConfig.getIndexJournalFlushWatermark()));
-        this.diskAccessPool = diskAccessPool;
         if (storeConfig.isCacheEnabled()) {
             this.cache = new LRUCache(storeConfig.getCacheSize());
         }
@@ -85,6 +93,10 @@ public class StorageEngine implements Closeable {
             return null;
         }
         return val.get();
+    }
+
+    public StoreMetaData getStoreMetadata() {
+        return storeMetadata;
     }
 
 
@@ -119,7 +131,7 @@ public class StorageEngine implements Closeable {
             }
 
             {
-                var rLock = storeMetadata.nonCompactedSegmentMetaDataListLock().readLock();
+                var rLock = storeMetadata.compactedSegmentMetaDataListLock().readLock();
                 rLock.lock();
                 var compactedSegments = storeMetadata.compactedSegmentMetaDataList();
                 var iterator = compactedSegments.listIterator(compactedSegments.size());
@@ -136,7 +148,7 @@ public class StorageEngine implements Closeable {
             }
 
         }
-        if(cache != null) {
+        if(cache != null && val != null) {
             cache.put(new ByteArray(key), new ByteArray(val));
         }
         return val;
@@ -147,28 +159,23 @@ public class StorageEngine implements Closeable {
         var currSegmentWriteLock = currSegmentLock.writeLock();
         currSegmentWriteLock.lock();
         try {
-            int prevNonCompactedId, nonCompactedSegmentMetaDataListSize, prevCompactedId, compactedSegmentMetaDataListSize;
+            int nonCompactedSegmentMetaDataListSize, compactedSegmentMetaDataListSize;
             nonCompactedSegmentMetaDataListSize = storeMetadata.nonCompactedSegmentMetaDataList().size();
-            if (nonCompactedSegmentMetaDataListSize == 0) {
-                prevNonCompactedId = 0;
-            } else {
-                int lastIndex = nonCompactedSegmentMetaDataListSize - 1;
-                prevNonCompactedId = lastIndex + 1;
+            if (currNonCompactedId == -1) {
+                currNonCompactedId = nonCompactedSegmentMetaDataListSize;
             }
-            int newNonCompactedId = prevNonCompactedId + 1;
 
-            compactedSegmentMetaDataListSize = storeMetadata.nonCompactedSegmentMetaDataList().size();
-            if (compactedSegmentMetaDataListSize == 0) {
-                prevCompactedId = 0;
-            } else {
-                int lastIndex = compactedSegmentMetaDataListSize - 1;
-                prevCompactedId = lastIndex + 1;
+            currNonCompactedId++;
+
+            compactedSegmentMetaDataListSize = storeMetadata.compactedSegmentMetaDataList().size();
+            if (currCompactedId == -1) {
+                currCompactedId = compactedSegmentMetaDataListSize;
             }
-            int newCompactedId = prevCompactedId + 1;
-            String keyFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newNonCompactedId);
-            String valFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newNonCompactedId);
-            String segmentHeaderFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newNonCompactedId);
-            var newSegmentFile = new SegmentMetaData(keyFileNameNonCompacted, segmentHeaderFileNameNonCompacted, valFileNameNonCompacted, newNonCompactedId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
+
+            String keyFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), currNonCompactedId);
+            String valFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), currNonCompactedId);
+            String segmentHeaderFileNameNonCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.NON_COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), currNonCompactedId);
+            var newSegmentFile = new SegmentMetaData(keyFileNameNonCompacted, segmentHeaderFileNameNonCompacted, valFileNameNonCompacted, currNonCompactedId, new SegmentMetaData.Header(currInMemorySegment.size(), currInMemorySegment.firstKey().get(), currInMemorySegment.lastKey().get()));
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             // TODO make performance consistent. Random spikes because of this write
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
@@ -182,14 +189,17 @@ public class StorageEngine implements Closeable {
 
 
             if(nonCompactedSegmentMetaDataListSize + 1 > maxPendingCompactionCount && !this.compactionInProgress.get()) {
-                this.diskAccessPool.submit(() -> {
+                currCompactedId++;
+                var f = this.diskAccessPool.submit(() -> {
                     this.compactionInProgress.getAndSet(true);
-                    String keyFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), newCompactedId);
-                    String valFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), newCompactedId);
-                    String segmentHeaderFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), newCompactedId);
-                    compacter.compact(this.storeMetadata, keyFileNameCompacted, valFileNameCompacted, segmentHeaderFileNameCompacted, newCompactedId);
+                    String keyFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_KEY_FILE_NAME_FORMAT, storeMetadata.name(), currCompactedId);
+                    String valFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_VAL_FILE_NAME_FORMAT, storeMetadata.name(), currCompactedId);
+                    String segmentHeaderFileNameCompacted = storeMetadata.storeRootPath() + "/" + String.format(SegmentMetaData.COMPACTED_SEGMENT_HEADER_FILE_NAME_FORMAT, storeMetadata.name(), currCompactedId);
+                    compacter.compact(this.storeMetadata, keyFileNameCompacted, valFileNameCompacted, segmentHeaderFileNameCompacted, currCompactedId);
                     this.compactionInProgress.getAndSet(false);
                 });
+                // TODO memory leak. have to take care
+                this.backgroundTasks.add(f);
             }
 
         } catch (Exception e) {
@@ -232,5 +242,18 @@ public class StorageEngine implements Closeable {
     @Override
     public void close() throws IOException {
         this.journalWriter.close();
+    }
+
+    public void shutdown() {
+        this.diskAccessPool.shutdown();
+        try {
+            while(!backgroundTasks.isEmpty()) {
+                backgroundTasks.poll().get();
+            }
+        } catch (Exception e) {
+            Logger.error("Error in shutting down ", e);
+        }
+
+
     }
 }

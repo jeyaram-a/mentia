@@ -1,5 +1,7 @@
 package org.jhouse.mentia.store;
 
+import org.jhouse.mentia.store.util.Instrumentation;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.tinylog.Logger;
@@ -13,7 +15,7 @@ class StoreTest {
     @Test
     @Order(1)
     void testStoreOpen() {
-        String path = "C:\\Users\\jeyar\\OneDrive\\Documents\\db\\sample";
+        String path = "/home/j/db/sample";
         File dir = new File(path);
         for (File file : dir.listFiles())
             if (!file.isDirectory())
@@ -40,25 +42,28 @@ class StoreTest {
             vals[i] = vb;
         }
 
-        var start = System.currentTimeMillis();
-        for(int i=0; i<entrySize; ++i) {
-            store.put(keys[i], vals[i]);
-        }
+        long writeDuration = Instrumentation.measure(() -> {
+            for(int i=0; i<entrySize; ++i) {
+                store.put(keys[i], vals[i]);
+            }
+        }) ;
 
-        var writeDuration = System.currentTimeMillis() - start;
         Logger.info(String.format("Writing took %d millis. Total %d bytes", writeDuration, tb));
-        start = System.currentTimeMillis();
-        var val = store.get("hello-1343113".getBytes());
-        var readDuration = System.currentTimeMillis() - start;
-        Logger.info("val returned "+new String(val));
+
+        long readDuration = Instrumentation.measure(() -> {
+            var val = store.get("hello-1343113".getBytes());
+            Logger.info("val returned "+new String(val));
+
+        });
 
         Logger.info(String.format("Read took %d millis", readDuration));
+        store.shutDown();
     }
 
     @Test
     @Order(2)
     void testExistingStoreOpen() {
-        String path = "C:\\Users\\jeyar\\OneDrive\\Documents\\db\\sample";
+        String path = "/home/j/db/sample";
         ExecutorService pool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
         var config = new StoreConfig();
         config.setAsyncWrite(true);
@@ -67,11 +72,18 @@ class StoreTest {
         config.setCacheEnabled(true);
         config.setCacheSize(UtilConstants.MB * 5);
         var store = Store.open(path, "sample", config, pool);
-        var start = System.currentTimeMillis();
-        var val = store.get("hello-1".getBytes());
-        var readDuration = System.currentTimeMillis() - start;
-        Logger.info("Returned "+new String(val));
+        var readDuration = Instrumentation.measure(() -> {
+            var val = store.get("hello-1".getBytes());
+            Assertions.assertNotNull(val);
+        });
         Logger.info(String.format("Read took %d millis", readDuration));
+        readDuration = Instrumentation.measure(() -> {
+            var val = store.get("hello-8".getBytes());
+            Assertions.assertNotNull(val);
+        });
+        Logger.info(String.format("Read took %d millis", readDuration));
+
+
     }
 
 
