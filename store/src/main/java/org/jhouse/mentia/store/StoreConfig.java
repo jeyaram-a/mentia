@@ -11,6 +11,8 @@ public class StoreConfig {
 
     private int maxPendingCompactionCount;
 
+    private boolean compressionEnabled;
+
     public boolean isAsyncWrite() {
         return asyncWrite;
     }
@@ -55,6 +57,14 @@ public class StoreConfig {
         return maxPendingCompactionCount;
     }
 
+    public boolean isCompressionEnabled() {
+        return compressionEnabled;
+    }
+
+    public void setCompressionEnabled(boolean compressionEnabled) {
+        this.compressionEnabled = compressionEnabled;
+    }
+
     public void setMaxPendingCompactionCount(int maxPendingCompactionCount) {
         this.maxPendingCompactionCount = maxPendingCompactionCount;
     }
@@ -67,6 +77,8 @@ public class StoreConfig {
                 ", indexJournalFlushWatermark=" + indexJournalFlushWatermark +
                 ", segmentIndexFoldMark=" + segmentIndexFoldMark +
                 ", cacheSize=" + cacheSize +
+                ", maxPendingCompactionCount=" + maxPendingCompactionCount +
+                ", compressionEnabled=" + compressionEnabled +
                 '}';
     }
 }

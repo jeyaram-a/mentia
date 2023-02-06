@@ -3,6 +3,7 @@ package org.jhouse.mentia.store;
 
 import org.jhouse.mentia.store.metadata.SegmentMetaData;
 import org.jhouse.mentia.store.metadata.StoreMetaData;
+import org.jhouse.mentia.store.storage.JournalReader;
 import org.jhouse.mentia.store.storage.StorageEngine;
 import org.tinylog.Logger;
 
@@ -128,6 +129,12 @@ public class Store {
         compactedMetaData.sort(Comparator.comparingInt(SegmentMetaData::getId));
         return new StoreMetaData(lock, storePath, name, maxJournalId, compactedMetaData, nonCompactedMetaData,
                 new ReentrantReadWriteLock(), new ReentrantReadWriteLock());
+    }
+    void readLatestJournalIntoCurrSegemnt(StorageEngine engine) {
+        var journalReader = new JournalReader(engine.getJournalFile());
+        for(byte[][] entry: journalReader.read()) {
+
+        }
     }
 
     public static Store open(String path, String name, StoreConfig config, ExecutorService diskAccessPool) {

@@ -8,6 +8,7 @@ import org.jhouse.mentia.store.metadata.StoreMetaData;
 import org.jhouse.mentia.store.util.Instrumentation;
 import org.tinylog.Logger;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
@@ -20,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.zip.Deflater;
+import java.util.zip.Inflater;
 
 public class StorageEngine implements Closeable {
 
@@ -43,7 +46,7 @@ public class StorageEngine implements Closeable {
 
     private final ExecutorService diskAccessPool;
 
-    private final  Compacter compacter = new Compacter();
+    private final Compacter compacter = new Compacter();
 
     private int currNonCompactedId = -1;
     private int currCompactedId = -1;
@@ -72,11 +75,15 @@ public class StorageEngine implements Closeable {
         if (storeConfig.isCacheEnabled()) {
             this.cache = new LRUCache(storeConfig.getCacheSize());
         }
-        if(storeConfig.getMaxPendingCompactionCount() <= 0) {
+        if (storeConfig.getMaxPendingCompactionCount() <= 0) {
             this.maxPendingCompactionCount = 5;
         } else {
             this.maxPendingCompactionCount = storeConfig.getMaxPendingCompactionCount();
         }
+    }
+
+    public String getJournalFile() {
+        this.journalWriter.get
     }
 
     private boolean isKeyInRange(byte[] key, byte[] min, byte[] max) {
@@ -95,10 +102,6 @@ public class StorageEngine implements Closeable {
         return val.get();
     }
 
-    public StoreMetaData getStoreMetadata() {
-        return storeMetadata;
-    }
-
 
     public byte[] get(byte[] key) {
 
@@ -107,7 +110,7 @@ public class StorageEngine implements Closeable {
         if (val == null && cache != null) {
             ByteArray valFromCache = cache.get(new ByteArray(key));
             if (valFromCache != null) {
-                return valFromCache.get();
+                val = valFromCache.get();
             }
         }
 
@@ -130,7 +133,7 @@ public class StorageEngine implements Closeable {
                 rLock.unlock();
             }
 
-            {
+            if (val == null) {
                 var rLock = storeMetadata.compactedSegmentMetaDataListLock().readLock();
                 rLock.lock();
                 var compactedSegments = storeMetadata.compactedSegmentMetaDataList();
@@ -148,10 +151,29 @@ public class StorageEngine implements Closeable {
             }
 
         }
-        if(cache != null && val != null) {
+        if (cache != null && val != null) {
             cache.put(new ByteArray(key), new ByteArray(val));
         }
-        return val;
+
+        if (storeConfig.isCompressionEnabled()) {
+            try {
+                Inflater inflater = new Inflater();
+                inflater.setInput(val);
+                ByteArrayOutputStream ous = new ByteArrayOutputStream();
+                byte[] buffer = new byte[1024];
+                while (!inflater.finished()) {
+                    int l = inflater.inflate(buffer);
+                    ous.write(buffer, 0, l);
+                }
+                inflater.end();
+                return ous.toByteArray();
+            } catch (Exception e) {
+                Logger.error("Error in inflating", e);
+                throw new RuntimeException("Error in inflating", e);
+            }
+        } else {
+            return val;
+        }
     }
 
     // This method has to be scynchronised
@@ -179,7 +201,7 @@ public class StorageEngine implements Closeable {
             this.storeMetadata.nonCompactedSegmentMetaDataList().add(newSegmentFile);
             // TODO make performance consistent. Random spikes because of this write
             Logger.info(String.format("%s segment file writing commencing. Id=%d", storeMetadata.name(), newSegmentFile.getId()));
-            long timeTaken = Instrumentation.measure(() -> Files.writeSegment(newSegmentFile, this.currInMemorySegment, valSize,this.diskAccessPool));
+            long timeTaken = Instrumentation.measure(() -> Files.writeSegment(newSegmentFile, this.currInMemorySegment, valSize, this.diskAccessPool));
             Logger.info(String.format("%s segment file written successfully. Took %d ms", storeMetadata.name(), timeTaken));
             this.journalId++;
             journalWriter.createNewJournalFile(this.journalId);
@@ -213,9 +235,23 @@ public class StorageEngine implements Closeable {
     public void put(byte[] key, byte[] val) {
         Lock writeLock = null;
         try {
-            valSize += val.length;
             var keyArr = new ByteArray(key);
+            if(storeConfig.isCompressionEnabled()) {
+                Deflater deflater = new Deflater();
+                deflater.setInput(val);
+                deflater.finish();
+                ByteArrayOutputStream ous = new ByteArrayOutputStream();
+                byte[] buffer = new byte[1024];
+                while (!deflater.finished()) {
+                    int l = deflater.deflate(buffer);
+                    ous.write(buffer, 0, l);
+                }
+                deflater.end();
+                val = ous.toByteArray();
+            }
+            valSize += val.length;
             var valArr = new ByteArray(val);
+
             if (cache != null) {
                 cache.put(keyArr, valArr);
             }
@@ -247,7 +283,7 @@ public class StorageEngine implements Closeable {
     public void shutdown() {
         this.diskAccessPool.shutdown();
         try {
-            while(!backgroundTasks.isEmpty()) {
+            while (!backgroundTasks.isEmpty()) {
                 backgroundTasks.poll().get();
             }
         } catch (Exception e) {

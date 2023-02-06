@@ -20,6 +20,7 @@ public class JournalWriter implements Closeable {
 
     private final JournalConfig config;
 
+
     private String journalPath;
 
 
@@ -90,6 +91,9 @@ public class JournalWriter implements Closeable {
         }
     }
 
+    public String getJournalPath() {
+        return journalPath;
+    }
 
     @Override
     public void close() throws IOException {

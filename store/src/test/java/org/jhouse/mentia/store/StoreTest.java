@@ -28,12 +28,13 @@ class StoreTest {
         config.setSegmentIndexFoldMark(UtilConstants.MB * 200);
         config.setCacheEnabled(true);
         config.setCacheSize(UtilConstants.MB * 5);
+        config.setCompressionEnabled(true);
         var store = Store.open(path, "sample", config, pool);
         long tb = 0;
         int entrySize = 2000000;
         byte[][] keys = new byte[entrySize][];
         byte[][] vals = new byte[entrySize][];
-
+        Logger.info("preparing input");
         for (int i = 0; i < entrySize; ++i) {
             byte[] kb = ("hello-" + i).getBytes();
             byte[] vb = (("world-" + i)).repeat(100).getBytes();
@@ -41,9 +42,10 @@ class StoreTest {
             keys[i] = kb;
             vals[i] = vb;
         }
-
+        Logger.info("done preparing input");
         long writeDuration = Instrumentation.measure(() -> {
             for(int i=0; i<entrySize; ++i) {
+//                Logger.info("Storing "+i);
                 store.put(keys[i], vals[i]);
             }
         }) ;
@@ -51,7 +53,7 @@ class StoreTest {
         Logger.info(String.format("Writing took %d millis. Total %d bytes", writeDuration, tb));
 
         long readDuration = Instrumentation.measure(() -> {
-            var val = store.get("hello-1343113".getBytes());
+            var val = store.get("hello-1".getBytes());
             Logger.info("val returned "+new String(val));
 
         });
@@ -67,19 +69,20 @@ class StoreTest {
         ExecutorService pool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
         var config = new StoreConfig();
         config.setAsyncWrite(true);
-        config.setIndexJournalFlushWatermark(UtilConstants.MB);
-        config.setSegmentIndexFoldMark(UtilConstants.MB * 2);
+        config.setIndexJournalFlushWatermark(UtilConstants.MB * 10);
+        config.setSegmentIndexFoldMark(UtilConstants.MB * 200);
         config.setCacheEnabled(true);
         config.setCacheSize(UtilConstants.MB * 5);
+        config.setCompressionEnabled(true);
         var store = Store.open(path, "sample", config, pool);
         var readDuration = Instrumentation.measure(() -> {
             var val = store.get("hello-1".getBytes());
-            Assertions.assertNotNull(val);
+            Logger.info("Val is "+ new String(val));
         });
         Logger.info(String.format("Read took %d millis", readDuration));
         readDuration = Instrumentation.measure(() -> {
             var val = store.get("hello-8".getBytes());
-            Assertions.assertNotNull(val);
+            Logger.info("Val is "+ new String(val));
         });
         Logger.info(String.format("Read took %d millis", readDuration));
 
