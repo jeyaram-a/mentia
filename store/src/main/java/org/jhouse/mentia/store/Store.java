@@ -9,16 +9,14 @@ import org.tinylog.Logger;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -130,15 +128,21 @@ public class Store {
         return new StoreMetaData(lock, storePath, name, maxJournalId, compactedMetaData, nonCompactedMetaData,
                 new ReentrantReadWriteLock(), new ReentrantReadWriteLock());
     }
-    void readLatestJournalIntoCurrSegemnt(StorageEngine engine) {
-        var journalReader = new JournalReader(engine.getJournalFile());
-        for(byte[][] entry: journalReader.read()) {
-
+    static TreeMap<ByteArray, ByteArray> readLatestJournalIntoCurrSegemnt(StorageEngine engine) {
+        try {
+            var journalReader = new JournalReader(engine.getJournalFile());
+            return journalReader.read();
+        } catch (FileNotFoundException ex) {
+            return null;
         }
     }
 
     public static Store open(String path, String name, StoreConfig config, ExecutorService diskAccessPool) {
         var storageEngine = new StorageEngine(config, getStoreMetaData(path, name), diskAccessPool);
+        var latestSegment = readLatestJournalIntoCurrSegemnt(storageEngine);
+        if(latestSegment != null) {
+            storageEngine.setCurrSegmentInMemory(latestSegment);
+        }
         Logger.info(String.format("Opening %s. %s", name, config));
         return new Store(name, storageEngine);
     }

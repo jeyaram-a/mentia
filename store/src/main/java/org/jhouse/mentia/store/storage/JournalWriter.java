@@ -35,7 +35,7 @@ public class JournalWriter implements Closeable {
                 this.flushWatermark = config.flushWatermark();
             }
             journalPath = String.format(JOURNAL_PATH_FORMAT, config.basePath(), config.storeName(), config.id());
-            stream = new BufferedOutputStream(new FileOutputStream(journalPath));
+            stream = new BufferedOutputStream(new FileOutputStream(journalPath, true));
         } catch (FileNotFoundException ex) {
             throw new RuntimeException("Error while opening journal file" + journalPath);
         }

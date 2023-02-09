@@ -1,24 +1,27 @@
 package org.jhouse.mentia.store.storage;
 
-import java.io.*;
+import org.jhouse.mentia.store.ByteArray;
+import org.tinylog.Logger;
+
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.TreeMap;
 
 public class JournalReader implements Cloneable {
 
     BufferedInputStream in;
-    public JournalReader(String file) {
-        try {
+    public JournalReader(String file) throws FileNotFoundException {
             in = new BufferedInputStream(new FileInputStream(file));
-        } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
-        }
+
     }
 
-    public List<byte[][]> read() {
-        List<byte[][]> readEntries = new LinkedList<>();
+    public TreeMap<ByteArray, ByteArray> read() {
+        TreeMap<ByteArray, ByteArray> readEntries = new TreeMap<>();
         try {
+            Logger.debug("Reading existing journal into segment in memory");
             while (true) {
                 byte[] lenArr = new byte[4];
                 int read = in.read(lenArr);
@@ -41,11 +44,10 @@ public class JournalReader implements Cloneable {
                 if (read == -1) {
                     break;
                 }
-                byte[][] entry = new byte[2][];
-                entry[0] = key;
-                entry[1] = val;
-                readEntries.add(entry);
+                readEntries.put(new ByteArray(key), new ByteArray(val));
             }
+            Logger.debug("Done reading existing journal into segment in memory");
+
             return readEntries;
         } catch (IOException e) {
             throw new RuntimeException(e);

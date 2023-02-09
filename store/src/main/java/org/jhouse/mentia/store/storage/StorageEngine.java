@@ -34,7 +34,7 @@ public class StorageEngine implements Closeable {
 
     private final ReadWriteLock currSegmentLock = new ReentrantReadWriteLock();
     private int currSegmentIndexSize = 0;
-    private final TreeMap<ByteArray, ByteArray> currInMemorySegment = new TreeMap<>();
+    private TreeMap<ByteArray, ByteArray> currInMemorySegment;
 
     private LRUCache cache;
 
@@ -80,10 +80,16 @@ public class StorageEngine implements Closeable {
         } else {
             this.maxPendingCompactionCount = storeConfig.getMaxPendingCompactionCount();
         }
+
+        this.currInMemorySegment = new TreeMap<>();
+    }
+
+    public void setCurrSegmentInMemory(TreeMap<ByteArray, ByteArray> map) {
+        this.currInMemorySegment = map;
     }
 
     public String getJournalFile() {
-        this.journalWriter.get
+        return this.journalWriter.getJournalPath();
     }
 
     private boolean isKeyInRange(byte[] key, byte[] min, byte[] max) {
@@ -210,7 +216,7 @@ public class StorageEngine implements Closeable {
             this.valSize = 0;
 
 
-            if(nonCompactedSegmentMetaDataListSize + 1 > maxPendingCompactionCount && !this.compactionInProgress.get()) {
+            if (nonCompactedSegmentMetaDataListSize + 1 > maxPendingCompactionCount && !this.compactionInProgress.get()) {
                 currCompactedId++;
                 var f = this.diskAccessPool.submit(() -> {
                     this.compactionInProgress.getAndSet(true);
@@ -236,7 +242,7 @@ public class StorageEngine implements Closeable {
         Lock writeLock = null;
         try {
             var keyArr = new ByteArray(key);
-            if(storeConfig.isCompressionEnabled()) {
+            if (storeConfig.isCompressionEnabled()) {
                 Deflater deflater = new Deflater();
                 deflater.setInput(val);
                 deflater.finish();

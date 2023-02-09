@@ -1,7 +1,6 @@
 package org.jhouse.mentia.store;
 
 import org.jhouse.mentia.store.util.Instrumentation;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.tinylog.Logger;
@@ -23,7 +22,7 @@ class StoreTest {
 
         ExecutorService pool = Executors.newFixedThreadPool(10, Thread.ofVirtual().factory());
         var config = new StoreConfig();
-        config.setAsyncWrite(true);
+        config.setAsyncWrite(false);
         config.setIndexJournalFlushWatermark(UtilConstants.MB * 10);
         config.setSegmentIndexFoldMark(UtilConstants.MB * 200);
         config.setCacheEnabled(true);
